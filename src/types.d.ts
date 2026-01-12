@@ -29,8 +29,14 @@ export interface InitOptions {
  * Solver options
  */
 export interface SolveOptions extends InitOptions {
-  /** Input format: 'lp', 'mps', 'zpl' (default: 'lp') */
-  format?: 'lp' | 'mps' | 'zpl';
+  /** 
+   * Input format (default: 'lp')
+   * - 'lp': LP format (linear problems only)
+   * - 'mps': MPS format (linear problems only)
+   * - 'zpl': ZIMPL format (supports MINLP, nonlinear expressions)
+   * - 'cip': CIP format (SCIP's native format)
+   */
+  format?: 'lp' | 'mps' | 'zpl' | 'cip';
   /** Time limit in seconds (default: 3600) */
   timeLimit?: number;
   /** Relative gap for MIP (e.g., 0.01 for 1%) */

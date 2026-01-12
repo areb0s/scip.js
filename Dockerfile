@@ -1,12 +1,14 @@
 # SCIP Optimization Solver -> WebAssembly Build Environment
 # Uses scipoptsuite top-level build with patched CMakeLists
+# Includes ZIMPL support for MINLP modeling
 
 FROM emscripten/emsdk:3.1.56
 
 LABEL maintainer="scip.js"
-LABEL description="Build SCIP optimization solver as WebAssembly"
+LABEL description="Build SCIP optimization solver as WebAssembly with ZIMPL support"
 
 # Install build dependencies
+# ZIMPL requires: bison, flex, gmp
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -14,7 +16,44 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     pkg-config \
+    m4 \
+    bison \
+    flex \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# ============================================
+# Build GMP for Emscripten (required by ZIMPL)
+# ============================================
+ENV GMP_VERSION=6.3.0
+
+RUN wget -q https://gmplib.org/download/gmp/gmp-${GMP_VERSION}.tar.xz \
+    && tar xf gmp-${GMP_VERSION}.tar.xz \
+    && rm gmp-${GMP_VERSION}.tar.xz
+
+WORKDIR /build/gmp-${GMP_VERSION}
+
+# Configure and build GMP with Emscripten (including C++ support for SCIP)
+RUN emconfigure ./configure \
+        --host=none \
+        --prefix=/build/gmp-install \
+        --disable-shared \
+        --enable-static \
+        --enable-cxx \
+        --disable-assembly \
+    && emmake make -j$(nproc) \
+    && emmake make install
+
+# Debug: Verify GMP installation files exist
+RUN echo "=== GMP Installation Contents ===" && \
+    ls -la /build/gmp-install/ && \
+    echo "=== Include files ===" && \
+    ls -la /build/gmp-install/include/ && \
+    echo "=== Library files ===" && \
+    ls -la /build/gmp-install/lib/ && \
+    echo "=== Checking for gmpxx.h ===" && \
+    (test -f /build/gmp-install/include/gmpxx.h && echo "gmpxx.h EXISTS" || echo "gmpxx.h MISSING")
 
 WORKDIR /build
 
@@ -41,22 +80,28 @@ RUN mkdir build-wasm
 WORKDIR /build/scipoptsuite-${SCIP_VERSION}/build-wasm
 
 # Configure using top-level CMakeLists.txt
+# ZIMPL enabled for MINLP support with GMP from our build
+# Using explicit GMP paths to ensure detection (plural variable names!)
 RUN emcmake cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
         -DZLIB=OFF \
-        -DZIMPL=OFF \
+        -DZIMPL=ON \
+        -DSTATIC_GMP=ON \
+        -DGMP_INCLUDE_DIRS=/build/gmp-install/include \
+        -DGMP_LIBRARY=/build/gmp-install/lib/libgmp.a \
+        -DGMPXX_LIBRARY=/build/gmp-install/lib/libgmpxx.a \
         -DIPOPT=OFF \
         -DPAPILO=OFF \
-        -DGMP=OFF \
         -DREADLINE=OFF \
         -DBOOST=OFF \
         -DTPI=none \
         -DLPS=spx \
         -DSYM=none \
-        -DCMAKE_C_FLAGS="-O3 -DNDEBUG" \
-        -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG" \
+        -DCMAKE_C_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include" \
+        -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include" \
         -DCMAKE_EXE_LINKER_FLAGS="-O3 \
+            -L/build/gmp-install/lib \
             -s MODULARIZE=1 \
             -s EXPORT_NAME=createSCIP \
             -s EXPORT_ES6=1 \

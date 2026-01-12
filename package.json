@@ -1,6 +1,6 @@
 {
   "name": "@areb0s/scip.js",
-  "version": "1.0.8",
+  "version": "1.1.1",
   "description": "SCIP Optimization Solver compiled to WebAssembly - LP, MIP, and MINLP support",
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",

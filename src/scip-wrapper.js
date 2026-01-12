@@ -222,9 +222,15 @@ export function isReady() {
 /**
  * Solve an optimization problem
  * 
- * @param {string} problem - Problem in LP, MPS, or ZIMPL format
+ * Supports LP, MIP, and MINLP (Mixed Integer Nonlinear Programming) problems.
+ * 
+ * @param {string} problem - Problem definition in one of the supported formats
  * @param {Object} options - Solver options
- * @param {string} options.format - Input format: 'lp', 'mps', 'zpl' (default: 'lp')
+ * @param {string} options.format - Input format: 'lp', 'mps', 'zpl', 'cip' (default: 'lp')
+ *   - 'lp': LP format (linear problems)
+ *   - 'mps': MPS format (linear problems)
+ *   - 'zpl': ZIMPL format (supports MINLP with nonlinear expressions)
+ *   - 'cip': CIP format (SCIP's native format, supports all constraint types)
  * @param {number} options.timeLimit - Time limit in seconds
  * @param {number} options.gap - Relative gap for MIP (e.g., 0.01 for 1%)
  * @param {boolean} options.verbose - Enable verbose output
@@ -232,6 +238,7 @@ export function isReady() {
  * @returns {Promise<Object>} Solution object
  * 
  * @example
+ * // LP format (linear)
  * const result = await solve(`
  *   Minimize obj: x + 2 y
  *   Subject To
@@ -241,6 +248,15 @@ export function isReady() {
  *     0 <= y <= 10
  *   End
  * `);
+ * 
+ * @example
+ * // ZIMPL format (MINLP with nonlinear)
+ * const result = await solve(`
+ *   var x >= 0 <= 10;
+ *   var y >= 0 <= 10;
+ *   minimize cost: x^2 + y^2;
+ *   subto c1: x + y >= 1;
+ * `, { format: 'zpl' });
  * 
  * console.log(result.status);      // 'optimal'
  * console.log(result.objective);   // 1.0
@@ -274,8 +290,9 @@ export async function solve(problem, options = {}) {
   };
   
   try {
-    // Determine file extension
-    const ext = format === 'mps' ? 'mps' : format === 'zpl' ? 'zpl' : 'lp';
+    // Determine file extension based on format
+    const formatExtMap = { mps: 'mps', zpl: 'zpl', cip: 'cip', lp: 'lp' };
+    const ext = formatExtMap[format] || 'lp';
     const problemFile = `/problems/problem.${ext}`;
     const solutionFile = '/solutions/solution.sol';
     
@@ -342,19 +359,18 @@ export async function solve(problem, options = {}) {
       output: stdout + stderr
     };
   } finally {
-    // Cleanup
-    try {
-      scipModule.FS.unlink('/problems/problem.lp');
-    } catch (e) {}
-    try {
-      scipModule.FS.unlink('/problems/problem.mps');
-    } catch (e) {}
-    try {
-      scipModule.FS.unlink('/solutions/solution.sol');
-    } catch (e) {}
-    try {
-      scipModule.FS.unlink('/settings/commands.txt');
-    } catch (e) {}
+    // Cleanup all possible problem files
+    const cleanupFiles = [
+      '/problems/problem.lp',
+      '/problems/problem.mps',
+      '/problems/problem.zpl',
+      '/problems/problem.cip',
+      '/solutions/solution.sol',
+      '/settings/commands.txt'
+    ];
+    for (const file of cleanupFiles) {
+      try { scipModule.FS.unlink(file); } catch (e) {}
+    }
   }
 }
 
