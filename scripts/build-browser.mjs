@@ -122,7 +122,7 @@ if (typeof window !== 'undefined') {
       platform: 'browser',
       target: ['es2020'],
       minify: true,
-      sourcemap: true,
+      sourcemap: 'external',  // .map 파일 생성하되 JS에 참조 안 넣음
       plugins: [resolveScipPlugin],
       banner: {
         js: importMetaPolyfill
