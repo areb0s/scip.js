@@ -22,9 +22,12 @@
     "README.md",
     "LICENSE"
   ],
+  "unpkg": "dist/scip.browser.min.js",
+  "jsdelivr": "dist/scip.browser.min.js",
   "scripts": {
     "build": "bash build.sh",
     "build:docker": "docker build -t scip-wasm-builder .",
+    "build:browser": "node scripts/build-browser.mjs",
     "test": "node examples/test.mjs",
     "serve": "npx http-server dist -p 8080 --cors",
     "clean": "rm -rf dist/ build/"
@@ -51,7 +54,9 @@
     "url": "https://github.com/user/scip.js/issues"
   },
   "homepage": "https://github.com/user/scip.js#readme",
-  "devDependencies": {},
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

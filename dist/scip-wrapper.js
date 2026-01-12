@@ -104,7 +104,7 @@ export async function init(options = {}) {
     const wasmPath = options.wasmPath || './scip.wasm';
     
     // Dynamic import of the Emscripten-generated module
-    const createSCIP = (await import('./scip.js')).default;
+    const createSCIP = (await import('./scip-core.js')).default;
     
     scipModule = await createSCIP({
       locateFile: (path) => {
