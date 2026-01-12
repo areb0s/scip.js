@@ -1,30 +1,16 @@
 
-// Polyfill for import.meta.url in IIFE context (supports Worker)
+// Polyfill for import.meta.url in IIFE context
+// Always use CDN as the base URL for WASM loading
 var __importMetaUrl = (function() {
-  // Worker environment
-  if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-    // Check if SCIP_WASM_BASE_URL is defined (user can set this before loading)
-    if (typeof SCIP_WASM_BASE_URL !== 'undefined') {
-      return SCIP_WASM_BASE_URL;
-    }
-    // Fallback to self.location
-    return self.location.href;
+  var CDN_BASE = 'https://cdn.jsdelivr.net/gh/areb0s/scip.js/dist/scip.min.js';
+  
+  // Check for explicit SCIP_BASE_URL first
+  if (typeof SCIP_BASE_URL !== 'undefined' && SCIP_BASE_URL) {
+    return SCIP_BASE_URL + (SCIP_BASE_URL.endsWith('/') ? '' : '/') + 'scip.min.js';
   }
-  // Browser main thread
-  if (typeof document !== 'undefined') {
-    if (document.currentScript && document.currentScript.src) {
-      return document.currentScript.src;
-    }
-    var scripts = document.getElementsByTagName('script');
-    for (var i = scripts.length - 1; i >= 0; i--) {
-      var src = scripts[i].src;
-      if (src && (src.includes('scip') && src.includes('.js'))) {
-        return src;
-      }
-    }
-    return window.location.href;
-  }
-  return '';
+  
+  // Always return CDN - this ensures WASM is loaded from CDN
+  return CDN_BASE;
 })();
 
 var SCIPModule = (() => {
@@ -2931,15 +2917,16 @@ var SCIPModule = (() => {
     readyResolve = resolve;
     readyReject = reject;
   });
+  var DEFAULT_CDN_BASE = "https://cdn.jsdelivr.net/gh/areb0s/scip.js/dist/";
   function getBaseUrl() {
-    const globalScope2 = typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};
+    const globalScope2 = typeof globalThis !== "undefined" && globalThis || typeof self !== "undefined" && self || typeof window !== "undefined" && window || {};
     if (globalScope2.SCIP_BASE_URL) {
       return globalScope2.SCIP_BASE_URL;
     }
-    if (typeof __importMetaUrl !== "undefined" && __importMetaUrl) {
+    if (typeof __importMetaUrl !== "undefined" && __importMetaUrl && !__importMetaUrl.startsWith("blob:")) {
       return __importMetaUrl.substring(0, __importMetaUrl.lastIndexOf("/") + 1);
     }
-    return "./";
+    return DEFAULT_CDN_BASE;
   }
   var Status = {
     OPTIMAL: "optimal",
@@ -3186,35 +3173,37 @@ var SCIPModule = (() => {
   };
 
   // src/scip-browser.js
-  var globalScope = typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};
-  globalScope.SCIP = scip_wrapper_default;
-  globalScope.SCIP.init = init;
-  globalScope.SCIP.ready = ready;
-  globalScope.SCIP.isReady = isReady;
-  globalScope.SCIP.solve = solve;
-  globalScope.SCIP.minimize = minimize;
-  globalScope.SCIP.maximize = maximize;
-  globalScope.SCIP.version = version;
-  globalScope.SCIP.getParameters = getParameters;
-  globalScope.SCIP.Status = Status;
-  init().catch((err) => {
-    console.error("[SCIP.js] Auto-initialization failed:", err.message);
-    console.error('[SCIP.js] Set SCIP_BASE_URL before loading, or call SCIP.init({ wasmPath: "..." })');
-  });
+  var globalScope = typeof globalThis !== "undefined" && globalThis || typeof self !== "undefined" && self || typeof window !== "undefined" && window || {};
+  var isBrowser = typeof window !== "undefined" || typeof self !== "undefined";
+  if (isBrowser && globalScope) {
+    globalScope.SCIP = scip_wrapper_default;
+    globalScope.SCIP.init = init;
+    globalScope.SCIP.ready = ready;
+    globalScope.SCIP.isReady = isReady;
+    globalScope.SCIP.solve = solve;
+    globalScope.SCIP.minimize = minimize;
+    globalScope.SCIP.maximize = maximize;
+    globalScope.SCIP.version = version;
+    globalScope.SCIP.getParameters = getParameters;
+    globalScope.SCIP.Status = Status;
+    init().catch((err) => {
+      console.error("[SCIP.js] Auto-initialization failed:", err.message);
+    });
+  }
   var scip_browser_default = scip_wrapper_default;
   return __toCommonJS(scip_browser_exports);
 })();
 
-// Expose SCIP globally
-if (typeof window !== 'undefined') {
-  window.SCIP = SCIPModule.default || SCIPModule;
-  // Also expose named exports
-  if (SCIPModule.init) window.SCIP.init = SCIPModule.init;
-  if (SCIPModule.solve) window.SCIP.solve = SCIPModule.solve;
-  if (SCIPModule.minimize) window.SCIP.minimize = SCIPModule.minimize;
-  if (SCIPModule.maximize) window.SCIP.maximize = SCIPModule.maximize;
-  if (SCIPModule.version) window.SCIP.version = SCIPModule.version;
-  if (SCIPModule.Status) window.SCIP.Status = SCIPModule.Status;
-}
+// Expose SCIP globally (works in Worker, Browser, Node.js)
+(function(g) {
+  g.SCIP = SCIPModule.default || SCIPModule;
+  if (SCIPModule.init) g.SCIP.init = SCIPModule.init;
+  if (SCIPModule.solve) g.SCIP.solve = SCIPModule.solve;
+  if (SCIPModule.minimize) g.SCIP.minimize = SCIPModule.minimize;
+  if (SCIPModule.maximize) g.SCIP.maximize = SCIPModule.maximize;
+  if (SCIPModule.version) g.SCIP.version = SCIPModule.version;
+  if (SCIPModule.Status) g.SCIP.Status = SCIPModule.Status;
+  if (SCIPModule.ready) g.SCIP.ready = SCIPModule.ready;
+})(typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : globalThis);
 
 //# sourceMappingURL=scip.js.map

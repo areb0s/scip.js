@@ -1,6 +1,6 @@
 {
-  "name": "scip.js",
-  "version": "0.1.0",
+  "name": "@areb0s/scip.js",
+  "version": "1.0.8",
   "description": "SCIP Optimization Solver compiled to WebAssembly - LP, MIP, and MINLP support",
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",
@@ -34,7 +34,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/user/scip.js"
+    "url": "https://github.com/areb0s/scip.js"
   },
   "keywords": [
     "scip",
@@ -51,9 +51,9 @@
   "author": "",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/user/scip.js/issues"
+    "url": "https://github.com/areb0s/scip.js"
   },
-  "homepage": "https://github.com/user/scip.js#readme",
+  "homepage": "https://github.com/areb0s/scip.js",
   "devDependencies": {
     "esbuild": "^0.24.0"
   },

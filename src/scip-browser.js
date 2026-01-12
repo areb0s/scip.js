@@ -38,29 +38,34 @@ import SCIP, {
   Status
 } from './scip-wrapper.js';
 
-// Get global scope (works in browser, worker, node)
-const globalScope = typeof globalThis !== 'undefined' ? globalThis :
-                    typeof self !== 'undefined' ? self :
-                    typeof window !== 'undefined' ? window : {};
+// Get global scope safely (works in browser, worker, SSR)
+const globalScope = (typeof globalThis !== 'undefined' && globalThis) ||
+                    (typeof self !== 'undefined' && self) ||
+                    (typeof window !== 'undefined' && window) ||
+                    {};
 
-// Expose to global scope
-globalScope.SCIP = SCIP;
-globalScope.SCIP.init = init;
-globalScope.SCIP.ready = ready;
-globalScope.SCIP.isReady = isReady;
-globalScope.SCIP.solve = solve;
-globalScope.SCIP.minimize = minimize;
-globalScope.SCIP.maximize = maximize;
-globalScope.SCIP.version = version;
-globalScope.SCIP.getParameters = getParameters;
-globalScope.SCIP.Status = Status;
+// Only run in browser/worker environment (not SSR)
+const isBrowser = typeof window !== 'undefined' || typeof self !== 'undefined';
 
-// Auto-initialize when script loads (like OpenCV)
-// This starts loading WASM in background
-init().catch((err) => {
-  console.error('[SCIP.js] Auto-initialization failed:', err.message);
-  console.error('[SCIP.js] Set SCIP_BASE_URL before loading, or call SCIP.init({ wasmPath: "..." })');
-});
+if (isBrowser && globalScope) {
+  // Expose to global scope
+  globalScope.SCIP = SCIP;
+  globalScope.SCIP.init = init;
+  globalScope.SCIP.ready = ready;
+  globalScope.SCIP.isReady = isReady;
+  globalScope.SCIP.solve = solve;
+  globalScope.SCIP.minimize = minimize;
+  globalScope.SCIP.maximize = maximize;
+  globalScope.SCIP.version = version;
+  globalScope.SCIP.getParameters = getParameters;
+  globalScope.SCIP.Status = Status;
+
+  // Auto-initialize when script loads (like OpenCV)
+  // This starts loading WASM in background
+  init().catch((err) => {
+    console.error('[SCIP.js] Auto-initialization failed:', err.message);
+  });
+}
 
 export default SCIP;
 export {

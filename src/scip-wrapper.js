@@ -35,12 +35,19 @@ export const ready = new Promise((resolve, reject) => {
 });
 
 /**
- * Get base URL from global SCIP_BASE_URL or script location
+ * Default CDN base URL for WASM files
+ */
+const DEFAULT_CDN_BASE = 'https://cdn.jsdelivr.net/gh/areb0s/scip.js/dist/';
+
+/**
+ * Get base URL from global SCIP_BASE_URL or default CDN
  */
 function getBaseUrl() {
-  const globalScope = typeof globalThis !== 'undefined' ? globalThis : 
-                      typeof self !== 'undefined' ? self : 
-                      typeof window !== 'undefined' ? window : {};
+  // Safe check for global scope (works in browser, worker, and SSR)
+  const globalScope = (typeof globalThis !== 'undefined' && globalThis) ||
+                      (typeof self !== 'undefined' && self) ||
+                      (typeof window !== 'undefined' && window) ||
+                      {};
   
   // Check for explicit SCIP_BASE_URL
   if (globalScope.SCIP_BASE_URL) {
@@ -48,11 +55,12 @@ function getBaseUrl() {
   }
   
   // Check for __importMetaUrl (set by bundler)
-  if (typeof __importMetaUrl !== 'undefined' && __importMetaUrl) {
+  if (typeof __importMetaUrl !== 'undefined' && __importMetaUrl && !__importMetaUrl.startsWith('blob:')) {
     return __importMetaUrl.substring(0, __importMetaUrl.lastIndexOf('/') + 1);
   }
   
-  return './';
+  // Default to CDN
+  return DEFAULT_CDN_BASE;
 }
 
 /**

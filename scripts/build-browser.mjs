@@ -37,32 +37,18 @@ const resolveScipPlugin = {
  * This gets injected at the top of the bundle
  */
 const importMetaPolyfill = `
-// Polyfill for import.meta.url in IIFE context (supports Worker)
+// Polyfill for import.meta.url in IIFE context
+// Always use CDN as the base URL for WASM loading
 var __importMetaUrl = (function() {
-  // Worker environment
-  if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-    // Check if SCIP_WASM_BASE_URL is defined (user can set this before loading)
-    if (typeof SCIP_WASM_BASE_URL !== 'undefined') {
-      return SCIP_WASM_BASE_URL;
-    }
-    // Fallback to self.location
-    return self.location.href;
+  var CDN_BASE = 'https://cdn.jsdelivr.net/gh/areb0s/scip.js/dist/scip.min.js';
+  
+  // Check for explicit SCIP_BASE_URL first
+  if (typeof SCIP_BASE_URL !== 'undefined' && SCIP_BASE_URL) {
+    return SCIP_BASE_URL + (SCIP_BASE_URL.endsWith('/') ? '' : '/') + 'scip.min.js';
   }
-  // Browser main thread
-  if (typeof document !== 'undefined') {
-    if (document.currentScript && document.currentScript.src) {
-      return document.currentScript.src;
-    }
-    var scripts = document.getElementsByTagName('script');
-    for (var i = scripts.length - 1; i >= 0; i--) {
-      var src = scripts[i].src;
-      if (src && (src.includes('scip') && src.includes('.js'))) {
-        return src;
-      }
-    }
-    return window.location.href;
-  }
-  return '';
+  
+  // Always return CDN - this ensures WASM is loaded from CDN
+  return CDN_BASE;
 })();
 `;
 
@@ -95,20 +81,20 @@ async function build() {
         'import.meta.url': '__importMetaUrl'
       },
       
-      // Footer: expose SCIP globally
+      // Footer: expose SCIP globally (Worker, Browser, Node.js)
       footer: {
         js: `
-// Expose SCIP globally
-if (typeof window !== 'undefined') {
-  window.SCIP = SCIPModule.default || SCIPModule;
-  // Also expose named exports
-  if (SCIPModule.init) window.SCIP.init = SCIPModule.init;
-  if (SCIPModule.solve) window.SCIP.solve = SCIPModule.solve;
-  if (SCIPModule.minimize) window.SCIP.minimize = SCIPModule.minimize;
-  if (SCIPModule.maximize) window.SCIP.maximize = SCIPModule.maximize;
-  if (SCIPModule.version) window.SCIP.version = SCIPModule.version;
-  if (SCIPModule.Status) window.SCIP.Status = SCIPModule.Status;
-}
+// Expose SCIP globally (works in Worker, Browser, Node.js)
+(function(g) {
+  g.SCIP = SCIPModule.default || SCIPModule;
+  if (SCIPModule.init) g.SCIP.init = SCIPModule.init;
+  if (SCIPModule.solve) g.SCIP.solve = SCIPModule.solve;
+  if (SCIPModule.minimize) g.SCIP.minimize = SCIPModule.minimize;
+  if (SCIPModule.maximize) g.SCIP.maximize = SCIPModule.maximize;
+  if (SCIPModule.version) g.SCIP.version = SCIPModule.version;
+  if (SCIPModule.Status) g.SCIP.Status = SCIPModule.Status;
+  if (SCIPModule.ready) g.SCIP.ready = SCIPModule.ready;
+})(typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : globalThis);
 `
       },
 
@@ -137,7 +123,7 @@ if (typeof window !== 'undefined') {
         'import.meta.url': '__importMetaUrl'
       },
       footer: {
-        js: `if(typeof window!=='undefined'){window.SCIP=SCIPModule.default||SCIPModule;}`
+        js: `(function(g){g.SCIP=SCIPModule.default||SCIPModule;if(SCIPModule.ready)g.SCIP.ready=SCIPModule.ready;})(typeof self!=='undefined'?self:typeof window!=='undefined'?window:globalThis);`
       },
     });
 
