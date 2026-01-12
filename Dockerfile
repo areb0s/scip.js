@@ -87,6 +87,7 @@ RUN emcmake cmake .. \
         -DBUILD_SHARED_LIBS=OFF \
         -DZLIB=OFF \
         -DZIMPL=ON \
+        -DSCIP_WITH_ZIMPL=ON \
         -DSTATIC_GMP=ON \
         -DGMP_INCLUDE_DIRS=/build/gmp-install/include \
         -DGMP_LIBRARY=/build/gmp-install/lib/libgmp.a \

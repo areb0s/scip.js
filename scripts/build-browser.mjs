@@ -65,8 +65,8 @@ function createBrowserWrapper() {
       var src = document.currentScript.src;
       return src.substring(0, src.lastIndexOf('/') + 1);
     }
-    // Default CDN
-    return 'https://cdn.jsdelivr.net/gh/areb0s/scip.js@latest/dist/';
+    // Default CDN (npm)
+    return 'https://cdn.jsdelivr.net/npm/@areb0s/scip.js@latest/dist/';
   })();
 
   // Inline the transformed scip-core.js (createSCIP factory function)
@@ -156,10 +156,22 @@ function createBrowserWrapper() {
     initPromise = new Promise(function(resolve, reject) {
       try {
         var wasmPath = options.wasmPath || (__SCIP_SCRIPT_DIR__ + 'scip.wasm');
+        console.log('[SCIP.js] __SCIP_SCRIPT_DIR__:', __SCIP_SCRIPT_DIR__);
+        console.log('[SCIP.js] Loading WASM from:', wasmPath);
+        
+        // Verify WASM is accessible
+        fetch(wasmPath, { method: 'HEAD' })
+          .then(function(res) {
+            console.log('[SCIP.js] WASM file check:', res.ok ? 'OK' : 'FAILED', res.status);
+          })
+          .catch(function(err) {
+            console.error('[SCIP.js] WASM file check failed:', err);
+          });
         
         createSCIP({
           locateFile: function(path) {
             if (path.endsWith('.wasm')) {
+              console.log('[SCIP.js] locateFile called for:', path, '-> returning:', wasmPath);
               return wasmPath;
             }
             return path;
@@ -175,6 +187,7 @@ function createBrowserWrapper() {
             }
           }
         }).then(function(module) {
+          console.log('[SCIP.js] WASM loaded successfully');
           scipModule = module;
           
           if (scipModule.FS) {
@@ -187,10 +200,16 @@ function createBrowserWrapper() {
           if (readyResolve) readyResolve();
           resolve();
         }).catch(function(err) {
-          if (readyReject) readyReject(err);
-          reject(err);
+          console.error('[SCIP.js] WASM loading failed:', err);
+          console.error('[SCIP.js] Attempted WASM path:', wasmPath);
+          console.error('[SCIP.js] Make sure the WASM file is accessible at this URL.');
+          console.error('[SCIP.js] You can set window.SCIP_BASE_URL before loading this script to specify a custom path.');
+          var error = new Error('SCIP WASM loading failed: ' + (err.message || err) + '. WASM path: ' + wasmPath);
+          if (readyReject) readyReject(error);
+          reject(error);
         });
       } catch (err) {
+        console.error('[SCIP.js] Initialization error:', err);
         if (readyReject) readyReject(err);
         reject(err);
       }
