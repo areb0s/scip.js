@@ -19,6 +19,10 @@ const rootDir = join(__dirname, '..');
 const srcDir = join(rootDir, 'src');
 const distDir = join(rootDir, 'dist');
 
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf-8'));
+const VERSION = packageJson.version;
+
 /**
  * Transform ES6 scip-core.js to IIFE-compatible version
  * - Remove import.meta.url dependency
@@ -66,7 +70,7 @@ function createBrowserWrapper() {
       return src.substring(0, src.lastIndexOf('/') + 1);
     }
     // Default CDN (npm)
-    return 'https://cdn.jsdelivr.net/npm/@areb0s/scip.js@latest/dist/';
+    return 'https://cdn.jsdelivr.net/npm/@areb0s/scip.js@${VERSION}/dist/';
   })();
 
   // Inline the transformed scip-core.js (createSCIP factory function)
@@ -78,6 +82,10 @@ function createBrowserWrapper() {
   var initPromise = null;
   var readyResolve = null;
   var readyReject = null;
+  
+  // Exception tracking for debugging WASM crashes
+  var lastAbortReason = null;
+  var lastExitCode = null;
   
   var readyPromise = new Promise(function(resolve, reject) {
     readyResolve = resolve;
@@ -110,7 +118,9 @@ function createBrowserWrapper() {
       objective.value = parseFloat(objMatch[1]);
     }
     
-    var varRegex = /^(\\w+)\\s+([\\d.e+-]+)/gm;
+    // ZIMPL 변수명은 x$sun#0 처럼 $, # 포함 가능
+    // \\S+ 로 공백 아닌 모든 문자 매칭
+    var varRegex = /^(\\S+)\\s+([\\d.e+-]+)/gm;
     var match;
     var solSection = output.split('solution:')[1] || output;
     
@@ -156,22 +166,10 @@ function createBrowserWrapper() {
     initPromise = new Promise(function(resolve, reject) {
       try {
         var wasmPath = options.wasmPath || (__SCIP_SCRIPT_DIR__ + 'scip.wasm');
-        console.log('[SCIP.js] __SCIP_SCRIPT_DIR__:', __SCIP_SCRIPT_DIR__);
-        console.log('[SCIP.js] Loading WASM from:', wasmPath);
-        
-        // Verify WASM is accessible
-        fetch(wasmPath, { method: 'HEAD' })
-          .then(function(res) {
-            console.log('[SCIP.js] WASM file check:', res.ok ? 'OK' : 'FAILED', res.status);
-          })
-          .catch(function(err) {
-            console.error('[SCIP.js] WASM file check failed:', err);
-          });
         
         createSCIP({
           locateFile: function(path) {
             if (path.endsWith('.wasm')) {
-              console.log('[SCIP.js] locateFile called for:', path, '-> returning:', wasmPath);
               return wasmPath;
             }
             return path;
@@ -184,6 +182,17 @@ function createBrowserWrapper() {
           printErr: function(text) {
             if (scipModule && scipModule.onStderr) {
               scipModule.onStderr(text);
+            }
+          },
+          // Capture abort/exit reasons for better error messages
+          onAbort: function(reason) {
+            lastAbortReason = reason;
+            console.error('[SCIP WASM Abort]', reason);
+          },
+          onExit: function(code) {
+            lastExitCode = code;
+            if (code !== 0) {
+              console.error('[SCIP WASM Exit]', code);
             }
           }
         }).then(function(module) {
@@ -304,12 +313,60 @@ function createBrowserWrapper() {
         };
         
       } catch (error) {
+        // Attempt to extract detailed exception message from WASM
+        var errorMessage = error.message || String(error);
+        var exceptionInfo = null;
+        
+        // Check if this is a WASM exception (pointer address)
+        if (typeof error === 'number' || /^\\d+$/.test(String(error))) {
+          var ptr = typeof error === 'number' ? error : parseInt(String(error), 10);
+          
+          // Try to get exception message using Emscripten's exception handling
+          if (scipModule) {
+            try {
+              // Modern Emscripten exception handling
+              if (typeof scipModule.getExceptionMessage === 'function') {
+                exceptionInfo = scipModule.getExceptionMessage(ptr);
+                errorMessage = 'WASM Exception: ' + exceptionInfo;
+              } else if (typeof scipModule.UTF8ToString === 'function') {
+                // Fallback: try to read as string from memory
+                try {
+                  var str = scipModule.UTF8ToString(ptr);
+                  if (str && str.length > 0 && str.length < 1000) {
+                    exceptionInfo = str;
+                    errorMessage = 'WASM Exception: ' + str;
+                  }
+                } catch (e) { /* not a valid string pointer */ }
+              }
+            } catch (e) {
+              console.error('[SCIP] Failed to get exception message:', e);
+            }
+          }
+          
+          if (!exceptionInfo) {
+            errorMessage = 'WASM Exception (ptr: ' + ptr + '). Enable exception handling in build for details.';
+          }
+        }
+        
         return {
           status: Status.ERROR,
-          error: error.message,
+          error: errorMessage,
+          errorDetails: {
+            rawError: String(error),
+            exceptionInfo: exceptionInfo,
+            abortReason: lastAbortReason,
+            exitCode: lastExitCode,
+            type: typeof error,
+            stdout: stdout,
+            stderr: stderr
+          },
           output: stdout + stderr
         };
       }
+      
+      // Reset exception tracking after solve
+      lastAbortReason = null;
+      lastExitCode = null;
     };
     
     if (!isInitialized) {
@@ -388,6 +445,9 @@ async function build() {
       '// __SCIP_CORE_PLACEHOLDER__',
       scipCore
     );
+    
+    // Replace version placeholder
+    browserBundle = browserBundle.replace('${VERSION}', VERSION);
     
     // Write unminified version
     writeFileSync(join(distDir, 'scip.js'), browserBundle);

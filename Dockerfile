@@ -99,25 +99,28 @@ RUN emcmake cmake .. \
         -DTPI=none \
         -DLPS=spx \
         -DSYM=none \
-        -DCMAKE_C_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include" \
-        -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include" \
+        -DCMAKE_C_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include -fexceptions" \
+        -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG -I/build/gmp-install/include -fexceptions" \
         -DCMAKE_EXE_LINKER_FLAGS="-O3 \
             -L/build/gmp-install/lib \
+            -fexceptions \
             -s MODULARIZE=1 \
             -s EXPORT_NAME=createSCIP \
             -s EXPORT_ES6=1 \
-            -s EXPORTED_RUNTIME_METHODS=FS,callMain \
+            -s EXPORTED_RUNTIME_METHODS=FS,callMain,getExceptionMessage,incrementExceptionRefcount,decrementExceptionRefcount \
             -s EXPORTED_FUNCTIONS=_main \
             -s ALLOW_MEMORY_GROWTH=1 \
             -s INITIAL_MEMORY=268435456 \
             -s MAXIMUM_MEMORY=2147483648 \
-            -s STACK_SIZE=5242880 \
+            -s STACK_SIZE=16777216 \
             -s ENVIRONMENT=web,worker \
             -s FILESYSTEM=1 \
             -s FORCE_FILESYSTEM=1 \
             -s EXIT_RUNTIME=0 \
             -s INVOKE_RUN=0 \
-            -s NO_EXIT_RUNTIME=1"
+            -s NO_EXIT_RUNTIME=1 \
+            -s DISABLE_EXCEPTION_CATCHING=0 \
+            -s EXCEPTION_CATCHING_ALLOWED=all"
 
 # Build only the scip target
 RUN emmake make -j$(nproc) scip 2>&1 | tee /build/build.log
