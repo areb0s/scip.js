@@ -1,0 +1,61 @@
+{
+  "name": "scip.js",
+  "version": "0.1.0",
+  "description": "SCIP Optimization Solver compiled to WebAssembly - LP, MIP, and MINLP support",
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "types": "dist/types.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./worker": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/scip-worker-client.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bash build.sh",
+    "build:docker": "docker build -t scip-wasm-builder .",
+    "test": "node examples/test.mjs",
+    "serve": "npx http-server dist -p 8080 --cors",
+    "clean": "rm -rf dist/ build/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/scip.js"
+  },
+  "keywords": [
+    "scip",
+    "optimization",
+    "solver",
+    "linear-programming",
+    "mixed-integer-programming",
+    "minlp",
+    "wasm",
+    "webassembly",
+    "operations-research",
+    "constraint-programming"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/user/scip.js/issues"
+  },
+  "homepage": "https://github.com/user/scip.js#readme",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "browser": {
+    "./dist/index.mjs": "./dist/index.mjs"
+  }
+}
