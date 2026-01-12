@@ -2916,6 +2916,7 @@ var SCIPModule = (() => {
     isReady: () => isReady,
     maximize: () => maximize,
     minimize: () => minimize,
+    ready: () => ready,
     solve: () => solve,
     version: () => version
   });
@@ -2924,6 +2925,22 @@ var SCIPModule = (() => {
   var scipModule = null;
   var isInitialized = false;
   var initPromise = null;
+  var readyResolve = null;
+  var readyReject = null;
+  var ready = new Promise((resolve, reject) => {
+    readyResolve = resolve;
+    readyReject = reject;
+  });
+  function getBaseUrl() {
+    const globalScope2 = typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};
+    if (globalScope2.SCIP_BASE_URL) {
+      return globalScope2.SCIP_BASE_URL;
+    }
+    if (typeof __importMetaUrl !== "undefined" && __importMetaUrl) {
+      return __importMetaUrl.substring(0, __importMetaUrl.lastIndexOf("/") + 1);
+    }
+    return "./";
+  }
   var Status = {
     OPTIMAL: "optimal",
     INFEASIBLE: "infeasible",
@@ -2976,45 +2993,60 @@ var SCIPModule = (() => {
     return stats;
   }
   async function init(options = {}) {
-    if (isInitialized) return;
-    if (initPromise) return initPromise;
+    if (isInitialized) {
+      return;
+    }
+    if (initPromise) {
+      return initPromise;
+    }
     initPromise = (async () => {
-      const wasmPath = options.wasmPath || "./scip.wasm";
-      const createSCIP2 = (await Promise.resolve().then(() => (init_scip_core(), scip_core_exports))).default;
-      scipModule = await createSCIP2({
-        locateFile: (path) => {
-          if (path.endsWith(".wasm")) {
-            return wasmPath;
+      try {
+        const baseUrl = getBaseUrl();
+        const wasmPath = options.wasmPath || baseUrl + "scip.wasm";
+        const createSCIP2 = (await Promise.resolve().then(() => (init_scip_core(), scip_core_exports))).default;
+        scipModule = await createSCIP2({
+          locateFile: (path) => {
+            if (path.endsWith(".wasm")) {
+              return wasmPath;
+            }
+            return path;
+          },
+          // Capture stdout/stderr from Emscripten
+          print: (text) => {
+            if (scipModule && scipModule.onStdout) {
+              scipModule.onStdout(text);
+            }
+          },
+          printErr: (text) => {
+            if (scipModule && scipModule.onStderr) {
+              scipModule.onStderr(text);
+            }
           }
-          return path;
-        },
-        // Capture stdout/stderr from Emscripten
-        print: (text) => {
-          if (scipModule && scipModule.onStdout) {
-            scipModule.onStdout(text);
+        });
+        if (scipModule.FS) {
+          try {
+            scipModule.FS.mkdir("/problems");
+          } catch (e) {
           }
-        },
-        printErr: (text) => {
-          if (scipModule && scipModule.onStderr) {
-            scipModule.onStderr(text);
+          try {
+            scipModule.FS.mkdir("/solutions");
+          } catch (e) {
+          }
+          try {
+            scipModule.FS.mkdir("/settings");
+          } catch (e) {
           }
         }
-      });
-      if (scipModule.FS) {
-        try {
-          scipModule.FS.mkdir("/problems");
-        } catch (e) {
+        isInitialized = true;
+        if (readyResolve) {
+          readyResolve();
         }
-        try {
-          scipModule.FS.mkdir("/solutions");
-        } catch (e) {
+      } catch (error) {
+        if (readyReject) {
+          readyReject(error);
         }
-        try {
-          scipModule.FS.mkdir("/settings");
-        } catch (e) {
-        }
+        throw error;
       }
-      isInitialized = true;
     })();
     return initPromise;
   }
@@ -3143,6 +3175,7 @@ var SCIPModule = (() => {
   }
   var scip_wrapper_default = {
     init,
+    ready,
     isReady,
     solve,
     minimize,
@@ -3153,17 +3186,21 @@ var SCIPModule = (() => {
   };
 
   // src/scip-browser.js
-  if (typeof window !== "undefined") {
-    window.SCIP = scip_wrapper_default;
-    window.SCIP.init = init;
-    window.SCIP.isReady = isReady;
-    window.SCIP.solve = solve;
-    window.SCIP.minimize = minimize;
-    window.SCIP.maximize = maximize;
-    window.SCIP.version = version;
-    window.SCIP.getParameters = getParameters;
-    window.SCIP.Status = Status;
-  }
+  var globalScope = typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {};
+  globalScope.SCIP = scip_wrapper_default;
+  globalScope.SCIP.init = init;
+  globalScope.SCIP.ready = ready;
+  globalScope.SCIP.isReady = isReady;
+  globalScope.SCIP.solve = solve;
+  globalScope.SCIP.minimize = minimize;
+  globalScope.SCIP.maximize = maximize;
+  globalScope.SCIP.version = version;
+  globalScope.SCIP.getParameters = getParameters;
+  globalScope.SCIP.Status = Status;
+  init().catch((err) => {
+    console.error("[SCIP.js] Auto-initialization failed:", err.message);
+    console.error('[SCIP.js] Set SCIP_BASE_URL before loading, or call SCIP.init({ wasmPath: "..." })');
+  });
   var scip_browser_default = scip_wrapper_default;
   return __toCommonJS(scip_browser_exports);
 })();

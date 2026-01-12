@@ -3,11 +3,57 @@
  * High-level wrapper around SCIP WASM
  * 
  * Supports: LP, MIP, MINLP (Mixed Integer Nonlinear Programming)
+ * 
+ * Usage in Worker (like OpenCV):
+ *   // Set base URL before loading script
+ *   self.SCIP_BASE_URL = 'https://cdn.jsdelivr.net/gh/user/scip.js@v1.0.0/dist/';
+ *   
+ *   // Load and execute script
+ *   const response = await fetch(SCIP_BASE_URL + 'scip.min.js');
+ *   new Function(await response.text())();
+ *   
+ *   // Wait for initialization
+ *   await self.SCIP.ready;
+ *   
+ *   // Use
+ *   const result = await self.SCIP.solve(`...`);
  */
 
 let scipModule = null;
 let isInitialized = false;
 let initPromise = null;
+let readyResolve = null;
+let readyReject = null;
+
+/**
+ * Ready promise - resolves when SCIP is initialized
+ * Usage: await SCIP.ready;
+ */
+export const ready = new Promise((resolve, reject) => {
+  readyResolve = resolve;
+  readyReject = reject;
+});
+
+/**
+ * Get base URL from global SCIP_BASE_URL or script location
+ */
+function getBaseUrl() {
+  const globalScope = typeof globalThis !== 'undefined' ? globalThis : 
+                      typeof self !== 'undefined' ? self : 
+                      typeof window !== 'undefined' ? window : {};
+  
+  // Check for explicit SCIP_BASE_URL
+  if (globalScope.SCIP_BASE_URL) {
+    return globalScope.SCIP_BASE_URL;
+  }
+  
+  // Check for __importMetaUrl (set by bundler)
+  if (typeof __importMetaUrl !== 'undefined' && __importMetaUrl) {
+    return __importMetaUrl.substring(0, __importMetaUrl.lastIndexOf('/') + 1);
+  }
+  
+  return './';
+}
 
 /**
  * Solution status enum
@@ -97,43 +143,61 @@ function parseStatistics(output) {
  * @returns {Promise<void>}
  */
 export async function init(options = {}) {
-  if (isInitialized) return;
-  if (initPromise) return initPromise;
+  if (isInitialized) {
+    return;
+  }
+  if (initPromise) {
+    return initPromise;
+  }
   
   initPromise = (async () => {
-    const wasmPath = options.wasmPath || './scip.wasm';
-    
-    // Dynamic import of the Emscripten-generated module
-    const createSCIP = (await import('./scip-core.js')).default;
-    
-    scipModule = await createSCIP({
-      locateFile: (path) => {
-        if (path.endsWith('.wasm')) {
-          return wasmPath;
+    try {
+      // Auto-detect wasmPath from SCIP_BASE_URL or script location
+      const baseUrl = getBaseUrl();
+      const wasmPath = options.wasmPath || (baseUrl + 'scip.wasm');
+      
+      // Dynamic import of the Emscripten-generated module
+      const createSCIP = (await import('./scip-core.js')).default;
+      
+      scipModule = await createSCIP({
+        locateFile: (path) => {
+          if (path.endsWith('.wasm')) {
+            return wasmPath;
+          }
+          return path;
+        },
+        // Capture stdout/stderr from Emscripten
+        print: (text) => {
+          if (scipModule && scipModule.onStdout) {
+            scipModule.onStdout(text);
+          }
+        },
+        printErr: (text) => {
+          if (scipModule && scipModule.onStderr) {
+            scipModule.onStderr(text);
+          }
         }
-        return path;
-      },
-      // Capture stdout/stderr from Emscripten
-      print: (text) => {
-        if (scipModule && scipModule.onStdout) {
-          scipModule.onStdout(text);
-        }
-      },
-      printErr: (text) => {
-        if (scipModule && scipModule.onStderr) {
-          scipModule.onStderr(text);
-        }
+      });
+      
+      // Create directories for problems, solutions, settings
+      if (scipModule.FS) {
+        try { scipModule.FS.mkdir('/problems'); } catch (e) { /* exists */ }
+        try { scipModule.FS.mkdir('/solutions'); } catch (e) { /* exists */ }
+        try { scipModule.FS.mkdir('/settings'); } catch (e) { /* exists */ }
       }
-    });
-    
-    // Create directories for problems, solutions, settings
-    if (scipModule.FS) {
-      try { scipModule.FS.mkdir('/problems'); } catch (e) { /* exists */ }
-      try { scipModule.FS.mkdir('/solutions'); } catch (e) { /* exists */ }
-      try { scipModule.FS.mkdir('/settings'); } catch (e) { /* exists */ }
+      
+      isInitialized = true;
+      
+      // Resolve ready promise
+      if (readyResolve) {
+        readyResolve();
+      }
+    } catch (error) {
+      if (readyReject) {
+        readyReject(error);
+      }
+      throw error;
     }
-    
-    isInitialized = true;
   })();
   
   return initPromise;
@@ -346,6 +410,7 @@ export async function getParameters() {
 // Default export
 export default {
   init,
+  ready,
   isReady,
   solve,
   minimize,
