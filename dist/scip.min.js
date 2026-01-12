@@ -1,23 +1,29 @@
 
-// Polyfill for import.meta.url in IIFE context
+// Polyfill for import.meta.url in IIFE context (supports Worker)
 var __importMetaUrl = (function() {
+  // Worker environment
+  if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
+    // Check if SCIP_WASM_BASE_URL is defined (user can set this before loading)
+    if (typeof SCIP_WASM_BASE_URL !== 'undefined') {
+      return SCIP_WASM_BASE_URL;
+    }
+    // Fallback to self.location
+    return self.location.href;
+  }
+  // Browser main thread
   if (typeof document !== 'undefined') {
-    // Browser: use currentScript or last script tag
     if (document.currentScript && document.currentScript.src) {
       return document.currentScript.src;
     }
-    // Fallback: find script tag with our filename
     var scripts = document.getElementsByTagName('script');
     for (var i = scripts.length - 1; i >= 0; i--) {
       var src = scripts[i].src;
-      if (src && (src.includes('scip.browser') || src.includes('scip.js'))) {
+      if (src && (src.includes('scip') && src.includes('.js'))) {
         return src;
       }
     }
-    // Last resort: current URL
     return window.location.href;
   }
-  // Node.js or other environment
   return '';
 })();
 
