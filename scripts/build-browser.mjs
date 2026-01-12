@@ -196,7 +196,6 @@ function createBrowserWrapper() {
             }
           }
         }).then(function(module) {
-          console.log('[SCIP.js] WASM loaded successfully');
           scipModule = module;
           
           if (scipModule.FS) {

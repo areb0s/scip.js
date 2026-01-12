@@ -18,7 +18,7 @@
       return src.substring(0, src.lastIndexOf('/') + 1);
     }
     // Default CDN (npm)
-    return 'https://cdn.jsdelivr.net/npm/@areb0s/scip.js@1.2.1/dist/';
+    return 'https://cdn.jsdelivr.net/npm/@areb0s/scip.js@1.2.2/dist/';
   })();
 
   // Inline the transformed scip-core.js (createSCIP factory function)
@@ -158,7 +158,6 @@ var Module=moduleArg;var readyPromiseResolve,readyPromiseReject;Module["ready"]=
             }
           }
         }).then(function(module) {
-          console.log('[SCIP.js] WASM loaded successfully');
           scipModule = module;
           
           if (scipModule.FS) {
