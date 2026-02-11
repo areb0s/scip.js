@@ -286,13 +286,14 @@ export async function solve(problem, options = {}) {
     await init(options);
   }
 
-  const {
-    format = "lp",
-    timeLimit = 3600,
-    gap = null,
-    verbose = false,
-    parameters = {},
-  } = options;
+    const {
+      format = "lp",
+      timeLimit = 3600,
+      gap = null,
+      verbose = false,
+      parameters = {},
+      initialSolution = null, // Warm start: { varName: value, ... }
+    } = options;
 
   // Capture output
   let stdout = "";
@@ -329,12 +330,28 @@ export async function solve(problem, options = {}) {
     }
 
     // Custom parameters
+    // SCIP CLI format: "set category param value" (space-separated, not slash)
     for (const [key, value] of Object.entries(parameters)) {
-      commands.push(`set ${key} ${value}`);
+      // Convert "limits/objectivelimit" to "limits objectivelimit"
+      const paramPath = key.replace(/\//g, ' ');
+      commands.push(`set ${paramPath} ${value}`);
     }
 
-    // Read and solve
+    // Read problem
     commands.push(`read ${problemFile}`);
+
+    // Warm start: write and read initial solution
+    if (initialSolution && Object.keys(initialSolution).length > 0) {
+      const solLines = ["solution status: unknown"];
+      for (const [varName, value] of Object.entries(initialSolution)) {
+        if (value !== 0) {
+          solLines.push(`${varName} ${value}`);
+        }
+      }
+      const initialSolutionFile = "/solutions/initial.sol";
+      scipModule.FS.writeFile(initialSolutionFile, solLines.join("\n"));
+      commands.push(`read solution ${initialSolutionFile}`);
+    }
     commands.push("optimize");
     commands.push("display solution");
     commands.push(`write solution ${solutionFile}`);
@@ -384,6 +401,7 @@ export async function solve(problem, options = {}) {
       "/problems/problem.zpl",
       "/problems/problem.cip",
       "/solutions/solution.sol",
+      "/solutions/initial.sol",
       "/settings/commands.txt",
     ];
     for (const file of cleanupFiles) {

@@ -54,9 +54,18 @@ echo "[4/5] Copying JavaScript wrapper files..."
 cp "${SCRIPT_DIR}/src/scip-wrapper.js" "${DIST_DIR}/"
 cp "${SCRIPT_DIR}/src/scip-worker.js" "${DIST_DIR}/"
 cp "${SCRIPT_DIR}/src/scip-worker-client.js" "${DIST_DIR}/"
+cp "${SCRIPT_DIR}/src/scip-api-wrapper.js" "${DIST_DIR}/"
 cp "${SCRIPT_DIR}/src/index.mjs" "${DIST_DIR}/"
 cp "${SCRIPT_DIR}/src/types.d.ts" "${DIST_DIR}/"
 cp "${SCRIPT_DIR}/src/pre.js" "${DIST_DIR}/"
+
+# Check for API build artifacts
+if [ -f "${DIST_DIR}/scip-api.wasm" ]; then
+    echo "      scip-api.wasm found (callback API support enabled)"
+else
+    echo "      Note: scip-api.wasm not found - callback API will not be available"
+    echo "      Check api-build.log for details"
+fi
 
 # Create a simple post-process wrapper that adds pre.js content
 if [ -f "${DIST_DIR}/scip.js" ]; then

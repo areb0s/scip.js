@@ -25,10 +25,6 @@ let initPromise = null;
 let readyResolve = null;
 let readyReject = null;
 
-// Exception tracking for debugging WASM crashes
-let lastAbortReason = null;
-let lastExitCode = null;
-
 /**
  * Ready promise - resolves when SCIP is initialized
  * Usage: await SCIP.ready;
@@ -38,16 +34,12 @@ export const ready = new Promise((resolve, reject) => {
   readyReject = reject;
 });
 
-// Read version from package.json
-const packageJson = JSON.parse(
-  readFileSync(join(rootDir, "package.json"), "utf-8")
-);
-const VERSION = packageJson.version;
-
 /**
  * Default CDN base URL for WASM files
+ * Using npm CDN with specific version to ensure JS/WASM version consistency
  */
-const DEFAULT_CDN_BASE = `https://cdn.jsdelivr.net/npm/@areb0s/scip.js@${VERSION}/dist/`;
+const DEFAULT_CDN_BASE =
+  "https://cdn.jsdelivr.net/npm/@areb0s/scip.js@latest/dist/";
 
 /**
  * Get base URL from global SCIP_BASE_URL or default CDN
@@ -103,32 +95,29 @@ function parseStatus(output) {
 
 /**
  * Parse solution values from SCIP output
- * @param {string} output - stdout from SCIP
- * @param {string} rawSolution - solution file content (more reliable)
  */
-function parseSolution(output, rawSolution = null) {
+function parseSolution(output) {
   const variables = {};
   const objective = { value: null, sense: null };
 
-  // Use rawSolution if available (more reliable)
-  const solText = rawSolution || output;
-
   // Parse objective value
-  const objMatch = solText.match(/objective value:\s*([\d.e+-]+)/i);
+  const objMatch = output.match(/objective value:\s*([\d.e+-]+)/i);
   if (objMatch) {
     objective.value = parseFloat(objMatch[1]);
   }
 
   // Parse variable values from solution display
-  // Match ZIMPL-style variable names: x$sun#0, effSum$star#1, b_sun_10, etc.
-  // Format: variableName    value    (obj:coef)
-  const varRegex = /^([\w$#]+)\s+([\d.e+-]+)/gm;
+  // Format: variable_name    value    (obj:coef)
+  const varRegex = /^(\w+)\s+([\d.e+-]+)/gm;
   let match;
 
-  while ((match = varRegex.exec(solText)) !== null) {
+  // Look for solution section
+  const solSection = output.split("solution:")[1] || output;
+
+  while ((match = varRegex.exec(solSection)) !== null) {
     const name = match[1];
     const value = parseFloat(match[2]);
-    if (!isNaN(value) && name !== "objective" && name !== "solution") {
+    if (!isNaN(value) && name !== "objective") {
       variables[name] = value;
     }
   }
@@ -201,17 +190,6 @@ export async function init(options = {}) {
         printErr: (text) => {
           if (scipModule && scipModule.onStderr) {
             scipModule.onStderr(text);
-          }
-        },
-        // Capture abort/exit reasons for better error messages
-        onAbort: (reason) => {
-          lastAbortReason = reason;
-          console.error("[SCIP WASM Abort]", reason);
-        },
-        onExit: (code) => {
-          lastExitCode = code;
-          if (code !== 0) {
-            console.error("[SCIP WASM Exit]", code);
           }
         },
       });
@@ -308,13 +286,14 @@ export async function solve(problem, options = {}) {
     await init(options);
   }
 
-  const {
-    format = "lp",
-    timeLimit = 3600,
-    gap = null,
-    verbose = false,
-    parameters = {},
-  } = options;
+    const {
+      format = "lp",
+      timeLimit = 3600,
+      gap = null,
+      verbose = false,
+      parameters = {},
+      initialSolution = null, // Warm start: { varName: value, ... }
+    } = options;
 
   // Capture output
   let stdout = "";
@@ -351,12 +330,28 @@ export async function solve(problem, options = {}) {
     }
 
     // Custom parameters
+    // SCIP CLI format: "set category param value" (space-separated, not slash)
     for (const [key, value] of Object.entries(parameters)) {
-      commands.push(`set ${key} ${value}`);
+      // Convert "limits/objectivelimit" to "limits objectivelimit"
+      const paramPath = key.replace(/\//g, ' ');
+      commands.push(`set ${paramPath} ${value}`);
     }
 
-    // Read and solve
+    // Read problem
     commands.push(`read ${problemFile}`);
+
+    // Warm start: write and read initial solution
+    if (initialSolution && Object.keys(initialSolution).length > 0) {
+      const solLines = ["solution status: unknown"];
+      for (const [varName, value] of Object.entries(initialSolution)) {
+        if (value !== 0) {
+          solLines.push(`${varName} ${value}`);
+        }
+      }
+      const initialSolutionFile = "/solutions/initial.sol";
+      scipModule.FS.writeFile(initialSolutionFile, solLines.join("\n"));
+      commands.push(`read solution ${initialSolutionFile}`);
+    }
     commands.push("optimize");
     commands.push("display solution");
     commands.push(`write solution ${solutionFile}`);
@@ -370,18 +365,18 @@ export async function solve(problem, options = {}) {
     // Run SCIP with batch mode
     const exitCode = scipModule.callMain(["-b", "/settings/commands.txt"]);
 
-    // Try to read solution file first (more reliable for parsing)
+    // Parse results
+    const status = parseStatus(stdout);
+    const { variables, objective } = parseSolution(stdout);
+    const statistics = parseStatistics(stdout);
+
+    // Try to read solution file
     let rawSolution = null;
     try {
       rawSolution = scipModule.FS.readFile(solutionFile, { encoding: "utf8" });
     } catch (e) {
       // Solution file may not exist if infeasible
     }
-
-    // Parse results
-    const status = parseStatus(stdout);
-    const { variables, objective } = parseSolution(stdout, rawSolution);
-    const statistics = parseStatistics(stdout);
 
     return {
       status,
@@ -393,62 +388,12 @@ export async function solve(problem, options = {}) {
       rawSolution,
     };
   } catch (error) {
-    // Attempt to extract detailed exception message from WASM
-    let errorMessage = error.message || String(error);
-    let exceptionInfo = null;
-
-    // Check if this is a WASM exception (pointer address)
-    if (typeof error === "number" || /^\d+$/.test(String(error))) {
-      const ptr =
-        typeof error === "number" ? error : parseInt(String(error), 10);
-
-      // Try to get exception message using Emscripten's exception handling
-      if (scipModule) {
-        try {
-          // Modern Emscripten exception handling
-          if (typeof scipModule.getExceptionMessage === "function") {
-            exceptionInfo = scipModule.getExceptionMessage(ptr);
-            errorMessage = `WASM Exception: ${exceptionInfo}`;
-          } else if (typeof scipModule.UTF8ToString === "function") {
-            // Fallback: try to read as string from memory
-            try {
-              const str = scipModule.UTF8ToString(ptr);
-              if (str && str.length > 0 && str.length < 1000) {
-                exceptionInfo = str;
-                errorMessage = `WASM Exception: ${str}`;
-              }
-            } catch (e) {
-              /* not a valid string pointer */
-            }
-          }
-        } catch (e) {
-          console.error("[SCIP] Failed to get exception message:", e);
-        }
-      }
-
-      if (!exceptionInfo) {
-        errorMessage = `WASM Exception (ptr: ${ptr}). Enable exception handling in build for details.`;
-      }
-    }
-
     return {
       status: Status.ERROR,
-      error: errorMessage,
-      errorDetails: {
-        rawError: String(error),
-        exceptionInfo,
-        abortReason: lastAbortReason,
-        exitCode: lastExitCode,
-        type: typeof error,
-        stdout: stdout,
-        stderr: stderr,
-      },
+      error: error?.message || String(error) || "Unknown error",
       output: stdout + stderr,
     };
   } finally {
-    // Reset exception tracking
-    lastAbortReason = null;
-    lastExitCode = null;
     // Cleanup all possible problem files
     const cleanupFiles = [
       "/problems/problem.lp",
@@ -456,6 +401,7 @@ export async function solve(problem, options = {}) {
       "/problems/problem.zpl",
       "/problems/problem.cip",
       "/solutions/solution.sol",
+      "/solutions/initial.sol",
       "/settings/commands.txt",
     ];
     for (const file of cleanupFiles) {

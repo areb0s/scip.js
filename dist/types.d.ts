@@ -45,6 +45,12 @@ export interface SolveOptions extends InitOptions {
   verbose?: boolean;
   /** Additional SCIP parameters */
   parameters?: Record<string, string | number | boolean>;
+  /** 
+   * Initial solution hint for warm start
+   * Object mapping variable names to values
+   * @example { "x$sun#0": 1, "x$moon#5": 1 }
+   */
+  initialSolution?: Record<string, number> | null;
 }
 
 /**
@@ -165,6 +171,279 @@ export interface SCIPModule {
 
 declare const SCIP: SCIPModule;
 export default SCIP;
+
+// ============================================
+// Callback API Types
+// ============================================
+
+/**
+ * Callback API solution status (same values, different export)
+ */
+export const ApiStatus: typeof Status;
+
+/**
+ * Callback API solver options (extends base options with callback features)
+ */
+export interface CallbackSolveOptions extends SolveOptions {
+  /** Initial solution hint for warm start */
+  initialSolution?: Record<string, number>;
+  /** Cutoff bound - prune nodes with worse objective */
+  cutoff?: number;
+}
+
+/**
+ * Node callback data
+ */
+export interface NodeCallbackData {
+  /** Current dual (lower) bound */
+  dualBound: number;
+  /** Current primal (upper) bound */
+  primalBound: number;
+  /** Number of nodes processed */
+  nodes: number;
+}
+
+/**
+ * Callback API statistics (extended)
+ */
+export interface CallbackStatistics {
+  /** Solving time in seconds */
+  solvingTime: number;
+  /** Number of branch-and-bound nodes */
+  nodes: number;
+  /** Final optimality gap */
+  gap: number;
+  /** Final dual bound */
+  dualBound: number;
+  /** Final primal bound */
+  primalBound: number;
+}
+
+/**
+ * Callback API solution result
+ */
+export interface CallbackSolution {
+  /** Solution status */
+  status: StatusType;
+  /** Objective function value */
+  objective: number;
+  /** Variable values */
+  variables: Record<string, number>;
+  /** Solver statistics */
+  statistics: CallbackStatistics;
+  /** Error message (if status is ERROR) */
+  error?: string;
+}
+
+/**
+ * Incumbent callback function type
+ * Called when a new best solution is found during solving
+ */
+export type IncumbentCallback = (objectiveValue: number) => void;
+
+/**
+ * Node callback function type
+ * Called when a node is selected for processing
+ */
+export type NodeCallback = (data: NodeCallbackData) => void;
+export type PricerCallback = () => void;
+
+export type PricingMode = 0 | 1 | 2;
+
+/**
+ * SCIP API class with callback support
+ * 
+ * @example
+ * ```typescript
+ * import { SCIPApi } from 'scip.js';
+ * 
+ * const scip = new SCIPApi();
+ * await scip.init();
+ * 
+ * // Set callback for new incumbent solutions
+ * scip.onIncumbent((objValue) => {
+ *   console.log('New solution found:', objValue);
+ *   // Could update cutoff here for custom pruning
+ * });
+ * 
+ * const result = await scip.solve(problemZPL, {
+ *   format: 'zpl',
+ *   initialSolution: { x: 1, y: 0 },
+ *   cutoff: 100
+ * });
+ * 
+ * scip.destroy();
+ * ```
+ */
+export class SCIPApi {
+  constructor();
+  
+  /**
+   * Initialize SCIP API module
+   * @param options - Initialization options
+   */
+  init(options?: InitOptions): Promise<void>;
+  
+  /**
+   * Set callback for new incumbent solutions
+   * Called whenever SCIP finds a new best solution
+   * @param callback - Function receiving the objective value
+   */
+  onIncumbent(callback: IncumbentCallback | null): void;
+  
+  /**
+   * Set callback for node processing (progress tracking)
+   * @param callback - Function receiving dual/primal bounds and node count
+   */
+  onNode(callback: NodeCallback | null): void;
+  onPricerRedcost(callback: PricerCallback | null): void;
+  onPricerFarkas(callback: PricerCallback | null): void;
+
+  getStage(): number;
+  hasCurrentNodeLP(): boolean;
+  getLPSolstat(): number;
+  getPricingMode(): PricingMode;
+  isSafeFarkasContext(): boolean;
+  isTransformed(): boolean;
+
+  findVarId(name: string): number;
+  findConsId(name: string): number;
+  getTransformedVarId(varId: number): number;
+  getTransformedConsId(consId: number): number;
+
+  getConsRowId(consId: number): number;
+  isConsInLP(consId: number): boolean;
+  getConsDualLinear(consId: number): number;
+  getConsFarkasLinear(consId: number): number;
+
+  getRowDual(rowId: number): number;
+  getRowFarkas(rowId: number): number;
+  getRowLhs(rowId: number): number;
+  getRowRhs(rowId: number): number;
+  getRowLPPos(rowId: number): number;
+  isRowInLP(rowId: number): boolean;
+  isRowLocal(rowId: number): boolean;
+  getRowName(rowId: number): string;
+
+  getNLProws(): number;
+  getLPRowDualsBatch(n: number): number[];
+  getLPRowFarkasBatch(n: number): number[];
+  getVarLPValue(varId: number): number;
+  getVarRedcost(varId: number): number;
+
+  addVarToRowsBatch(varId: number, rowIds: number[], vals: number[]): boolean;
+  addVarToConssBatch(varId: number, consIds: number[], vals: number[]): boolean;
+  includePricer(options?: {
+    name?: string;
+    desc?: string;
+    priority?: number;
+    delay?: boolean;
+  }): boolean;
+  activatePricer(): boolean;
+  deactivatePricer(): boolean;
+  isPricerActive(): boolean;
+  setPricerResult(resultCode: number): void;
+  setPricerLowerbound(value: number): void;
+  setPricerStopEarly(flag: boolean): void;
+  abortPricingRound(): void;
+  getAddedPricedVarCountThisCall(): number;
+  getLastPricingResult(): number;
+  getLastPricingMode(): number;
+  getPricerRedcostCalls(): number;
+  getPricerFarkasCalls(): number;
+  getPricerRound(): number;
+  getResultCodeSuccess(): number;
+  getResultCodeDidNotRun(): number;
+  getResultCodeDidNotFind(): number;
+  setParamInt(name: string, value: number): boolean;
+  setParamReal(name: string, value: number): boolean;
+  setParamBool(name: string, value: boolean): boolean;
+  setParamString(name: string, value: string): boolean;
+  addPricedVar(options: {
+    name: string;
+    lb?: number;
+    ub?: number;
+    obj?: number;
+    vartype?: number;
+    initial?: number;
+    removable?: number;
+  }): number;
+  getAddedPricedVarCount(): number;
+  writeLP(path: string): boolean;
+  writeLPSnapshot(prefix?: string): boolean;
+  writeMIP(path: string, genericNames?: boolean, origObj?: boolean, lazyConss?: boolean): boolean;
+  clearProblem(): boolean;
+  beginProblem(options?: { name?: string; maximize?: boolean }): boolean;
+  addLinearCons(options: {
+    name: string;
+    lhs?: number;
+    rhs?: number;
+    initial?: boolean;
+    separate?: boolean;
+    enforce?: boolean;
+    check?: boolean;
+    propagate?: boolean;
+    local?: boolean;
+    modifiable?: boolean;
+    dynamic?: boolean;
+    removable?: boolean;
+    stickingAtNode?: boolean;
+  }): number;
+  setConsModifiable(consId: number, modifiable: boolean): boolean;
+  addVar(options: {
+    name: string;
+    lb?: number;
+    ub?: number;
+    obj?: number;
+    vartype?: number;
+    initial?: number;
+    removable?: number;
+  }): number;
+  addCoefLinear(consId: number, varId: number, val: number): boolean;
+  addCoefLinearBatch(consId: number, varIds: number[], vals: number[]): boolean;
+  solveCurrentModel(options?: CallbackSolveOptions): Promise<CallbackSolution>;
+  
+  /**
+   * Solve an optimization problem
+   * @param problem - Problem definition string
+   * @param options - Solver options including callbacks
+   * @returns Solution with statistics
+   */
+  solve(problem: string, options?: CallbackSolveOptions): Promise<CallbackSolution>;
+  
+  /**
+   * Free SCIP resources
+   * Call this when done to release memory
+   */
+  destroy(): void;
+}
+
+/**
+ * Convenience function to solve with callbacks
+ * Creates SCIPApi, solves, and destroys automatically
+ * 
+ * @example
+ * ```typescript
+ * const result = await solveWithCallbacks(problem, {
+ *   format: 'zpl',
+ *   onIncumbent: (obj) => console.log('New best:', obj),
+ *   onNode: (data) => console.log('Progress:', data.nodes)
+ * });
+ * ```
+ */
+export function solveWithCallbacks(
+  problem: string, 
+  options?: CallbackSolveOptions & {
+    onIncumbent?: IncumbentCallback;
+    onNode?: NodeCallback;
+  }
+): Promise<CallbackSolution>;
+
+/**
+ * Create a callback-enabled solver instance
+ * Use when you need incumbent callbacks for custom pruning logic
+ */
+export function createCallbackSolver(options?: InitOptions): Promise<SCIPApi>;
 
 // Global declaration for CDN usage
 declare global {

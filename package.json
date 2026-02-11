@@ -1,6 +1,6 @@
 {
   "name": "@areb0s/scip.js",
-  "version": "1.2.3",
+  "version": "1.2.12",
   "description": "SCIP Optimization Solver compiled to WebAssembly - LP, MIP, and MINLP support",
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",
@@ -22,8 +22,8 @@
     "README.md",
     "LICENSE"
   ],
-  "unpkg": "dist/scip.browser.min.js",
-  "jsdelivr": "dist/scip.browser.min.js",
+  "unpkg": "dist/scip.min.js",
+  "jsdelivr": "dist/scip.min.js",
   "scripts": {
     "build": "bash build.sh",
     "build:docker": "docker build -t scip-wasm-builder .",

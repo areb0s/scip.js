@@ -51,6 +51,13 @@ export {
   terminate as terminateWorker
 } from './scip-worker-client.js';
 
+// Callback API (with incumbent/node callbacks support)
+export { 
+  SCIPApi,
+  solveWithCallbacks,
+  Status as ApiStatus
+} from './scip-api-wrapper.js';
+
 // Default export (main thread API)
 import SCIP from './scip-wrapper.js';
 export default SCIP;
@@ -70,4 +77,27 @@ export async function createWorkerSolver(options = {}) {
     isReady: worker.isReady,
     terminate: worker.terminate
   };
+}
+
+/**
+ * Create a callback-enabled solver instance
+ * Use this when you need incumbent callbacks for custom pruning logic
+ * 
+ * @example
+ * const solver = await createCallbackSolver();
+ * solver.onIncumbent((objValue) => {
+ *   console.log('New best solution:', objValue);
+ * });
+ * const result = await solver.solve(problem, {
+ *   format: 'zpl',
+ *   initialSolution: { x: 1, y: 0 },
+ *   cutoff: 100
+ * });
+ * solver.destroy();
+ */
+export async function createCallbackSolver(options = {}) {
+  const { SCIPApi } = await import('./scip-api-wrapper.js');
+  const solver = new SCIPApi();
+  await solver.init(options);
+  return solver;
 }

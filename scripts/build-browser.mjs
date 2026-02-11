@@ -235,6 +235,7 @@ function createBrowserWrapper() {
       var gap = options.gap || null;
       var verbose = options.verbose || false;
       var parameters = options.parameters || {};
+      var initialSolution = options.initialSolution || null;
       
       var stdout = '';
       var stderr = '';
@@ -266,11 +267,28 @@ function createBrowserWrapper() {
         
         for (var key in parameters) {
           if (parameters.hasOwnProperty(key)) {
-            commands.push('set ' + key + ' ' + parameters[key]);
+            var paramPath = key.replace(/\\//g, ' ');
+            commands.push('set ' + paramPath + ' ' + parameters[key]);
           }
         }
         
         commands.push('read ' + problemFile);
+
+        // Warm start: write and read initial solution
+        if (initialSolution && Object.keys(initialSolution).length > 0) {
+          var solLines = ['solution status: unknown'];
+          for (var varName in initialSolution) {
+            if (initialSolution.hasOwnProperty(varName)) {
+              var val = initialSolution[varName];
+              if (val !== 0) {
+                solLines.push(varName + ' ' + val);
+              }
+            }
+          }
+          var initialSolutionFile = '/solutions/initial.sol';
+          scipModule.FS.writeFile(initialSolutionFile, solLines.join('\\n'));
+          commands.push('read solution ' + initialSolutionFile);
+        }
         commands.push('optimize');
         commands.push('display solution');
         commands.push('write solution ' + solutionFile);
